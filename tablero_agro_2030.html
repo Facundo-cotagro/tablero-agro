@@ -5,279 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Tablero de Gestión — División Agro 2030</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
-function toggleDetail(id){
-  const body=document.getElementById(id);
-  const ico=document.getElementById('ico_'+id);
-  if(!body)return;
-  body.classList.toggle('open');
-  if(ico) ico.style.transform=body.classList.contains('open')?'rotate(90deg)':'';
-}
-
-function _getActV(pfx,i){
-  if(pfx==='rent'){const v=getRentVar();return v?v.actividades[i]:null;}
-  const v=getV();return v?v.actividades[i]:null;
-}
-function _reRenderChecks(pfx,i){
-  const a=_getActV(pfx,i);if(!a)return;
-  const checks=(a.checklist||[]).map((ck,ci)=>'<div class="checklist-item"><input type="checkbox"'+(ck.done?' checked':'')+' onchange="toggleCheck_'+pfx+'('+i+','+ci+',this.checked)"/><textarea class="checklist-item-text'+(ck.done?' done':'')+'" rows="1" onchange="editCheck_'+pfx+'('+i+','+ci+',this.value)">'+h(ck.texto)+'</textarea><button class="checklist-item-del" onclick="elimCheck_'+pfx+'('+i+','+ci+')"><i class="ti ti-x"></i></button></div>').join('');
-  const el=document.getElementById('checks_'+pfx+'_'+i);
-  if(el)el.innerHTML=checks||'<div style="font-size:11px;color:var(--text3);padding:3px 0">Sin ítems aún</div>';
-}
-function addCheck_gen(i){const inp=document.getElementById('newCheck_gen_'+i);if(!inp||!inp.value.trim())return;const v=getV();if(!v)return;if(!v.actividades[i].checklist)v.actividades[i].checklist=[];v.actividades[i].checklist.push({texto:inp.value.trim(),done:false});save();inp.value='';_reRenderChecks('gen',i);}
-function addCheck_rent(i){const inp=document.getElementById('newCheck_rent_'+i);if(!inp||!inp.value.trim())return;const v=getRentVar();if(!v)return;if(!v.actividades[i].checklist)v.actividades[i].checklist=[];v.actividades[i].checklist.push({texto:inp.value.trim(),done:false});save();inp.value='';_reRenderChecks('rent',i);}
-function toggleCheck_gen(i,ci,done){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].done=done;save();_reRenderChecks('gen',i);}
-function toggleCheck_rent(i,ci,done){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].done=done;save();_reRenderChecks('rent',i);}
-function editCheck_gen(i,ci,val){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].texto=val;save();}
-function editCheck_rent(i,ci,val){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].texto=val;save();}
-function elimCheck_gen(i,ci){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist.splice(ci,1);save();_reRenderChecks('gen',i);}
-function elimCheck_rent(i,ci){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist.splice(ci,1);save();_reRenderChecks('rent',i);}
-
-
-// ── ADJUNTOS ──
-function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
-
-function renderAdjuntos(adjs,pfx,i){
-  if(!adjs||!adjs.length)return '<div style="font-size:11px;color:var(--text3);padding:3px 0">Sin adjuntos</div>';
-  return adjs.map((adj,ai)=>{
-    const isImg=/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(adj.nombre);
-    const thumb=isImg?'<img class="adjunto-thumb" src="'+adj.data+'" onclick="openLightbox(\''+adj.data+'\')" alt="'+h(adj.nombre)+'"/>':'<div class="adjunto-icon"><i class="ti '+fileIcon(adj.nombre)+'"></i></div>';
-    return '<div class="adjunto-item">'+thumb+'<div class="adjunto-info"><div class="adjunto-name">'+h(adj.nombre)+'</div><div class="adjunto-size">'+adj.size+'</div></div><div class="adjunto-btns">'+(isImg?'<button class="adjunto-btn" onclick="openLightbox(\''+adj.data+'\')"><i class="ti ti-eye"></i></button>':'')+'<a class="adjunto-btn" href="'+adj.data+'" download="'+h(adj.nombre)+'"><i class="ti ti-download"></i></a><button class="adjunto-btn" style="color:#D85A30" onclick="elimAdj_'+pfx+'('+i+','+ai+')"><i class="ti ti-trash"></i></button></div></div>';
-  }).join('');
-}
-
-function fileIcon(n){
-  if(/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(n))return 'ti-photo';
-  if(/\.pdf$/i.test(n))return 'ti-file-type-pdf';
-  if(/\.(xlsx?|csv)$/i.test(n))return 'ti-file-spreadsheet';
-  if(/\.(docx?)$/i.test(n))return 'ti-file-word';
-  return 'ti-file';
-}
-
-function openLightbox(src){
-  document.getElementById('imgLightboxSrc').src=src;
-  document.getElementById('imgLightbox').classList.add('on');
-}
-
-function _addAdjuntoToAct(pfx,i,files){
-  const getAct=pfx==='rent'?()=>{const v=getRentVar();return v?v.actividades[i]:null;}:()=>{const v=getV();return v?v.actividades[i]:null;};
-  const a=getAct();if(!a)return;
-  if(!a.adjuntos)a.adjuntos=[];
-  let loaded=0;
-  Array.from(files).forEach(file=>{
-    const reader=new FileReader();
-    reader.onload=function(ev){
-      a.adjuntos.push({nombre:file.name,size:fmtSize(file.size),data:ev.target.result});
-      loaded++;
-      if(loaded===files.length){
-        save();
-        const el=document.getElementById('adjs_'+pfx+'_'+i);
-        if(el)el.innerHTML=renderAdjuntos(a.adjuntos,pfx,i);
-        toast('Archivo adjuntado');
-      }
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function addAdjunto_gen(i,inp){_addAdjuntoToAct('gen',i,inp.files);inp.value='';}
-function addAdjunto_rent(i,inp){_addAdjuntoToAct('rent',i,inp.files);inp.value='';}
-
-function elimAdj_gen(i,ai){const v=getV();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_gen_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'gen',i);}
-function elimAdj_rent(i,ai){const v=getRentVar();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_rent_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'rent',i);}
-
-
-// ── GOOGLE DRIVE INTEGRATION ──
-const GCLIENT_ID = '995640298856-ih628f2ssme9n51a14ie23traadi12bj.apps.googleusercontent.com';
-const GSCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
-const DRIVE_FILENAME = 'tablero_agro_2030_datos.json';
-
-let gTokenClient = null;
-let gAccessToken = null;
-let gFileId = null;
-let gUserEmail = '';
-let driveReady = false;
-let gapiReady = false;
-
-// Inicializar cuando cargue la página
-window.addEventListener('load', function(){
-  // Cargar GAPI
-  function waitGapi(){
-    if(typeof gapi !== 'undefined'){
-      gapi.load('client', function(){
-        gapi.client.init({
-          discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
-        }).then(()=>{ gapiReady=true; initTokenClient(); });
-      });
-    } else { setTimeout(waitGapi, 200); }
-  }
-  waitGapi();
-
-  // Restaurar sesión si había token guardado
-  const savedToken = sessionStorage.getItem('gAccessToken');
-  const savedEmail = sessionStorage.getItem('gUserEmail');
-  const savedFileId = sessionStorage.getItem('gFileId');
-  if(savedToken){
-    gAccessToken=savedToken;
-    gUserEmail=savedEmail||'';
-    gFileId=savedFileId||null;
-    gapi.client.setToken({access_token:gAccessToken});
-    setDriveConnected();
-    toast('Drive reconectado automáticamente');
-  }
-});
-
-function initTokenClient(){
-  if(typeof google === 'undefined'){ setTimeout(initTokenClient,300); return; }
-  gTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GCLIENT_ID,
-    scope: GSCOPES,
-    callback: async (resp) => {
-      if(resp.error){ setDriveError('Error: '+resp.error); return; }
-      gAccessToken = resp.access_token;
-      gapi.client.setToken({access_token:gAccessToken});
-      sessionStorage.setItem('gAccessToken', gAccessToken);
-      // Obtener email del usuario
-      try{
-        const me = await gapi.client.request({path:'https://www.googleapis.com/oauth2/v2/userinfo'});
-        gUserEmail = me.result.email||'';
-        sessionStorage.setItem('gUserEmail', gUserEmail);
-      }catch(e){}
-      setDriveConnected();
-      await driveFindOrCreate();
-      await driveLoad();
-      toast('Conectado a Google Drive ✓');
-    }
-  });
-  driveReady = true;
-}
-
-function driveLogin(){
-  if(!driveReady){ toast('Iniciando conexión, intentá en un momento...'); setTimeout(driveLogin,1000); return; }
-  gTokenClient.requestAccessToken({prompt:''});
-}
-
-function driveLogout(){
-  if(gAccessToken) google.accounts.oauth2.revoke(gAccessToken);
-  gAccessToken=null; gFileId=null; gUserEmail='';
-  sessionStorage.removeItem('gAccessToken');
-  sessionStorage.removeItem('gUserEmail');
-  sessionStorage.removeItem('gFileId');
-  setDriveDisconnected();
-  toast('Desconectado de Drive');
-}
-
-function setDriveConnected(){
-  document.getElementById('driveDot').className='drive-dot connected';
-  document.getElementById('driveStatusTxt').textContent='Conectado a Google Drive';
-  document.getElementById('driveUser').textContent=gUserEmail;
-  document.getElementById('btnDriveConnect').style.display='none';
-  document.getElementById('btnDriveSync').style.display='';
-  document.getElementById('btnDriveLoad').style.display='';
-  document.getElementById('btnDriveDisconnect').style.display='';
-}
-
-function setDriveSyncing(msg){
-  document.getElementById('driveDot').className='drive-dot syncing';
-  document.getElementById('driveStatusTxt').textContent=msg||'Sincronizando...';
-}
-
-function setDriveError(msg){
-  document.getElementById('driveDot').className='drive-dot error';
-  document.getElementById('driveStatusTxt').textContent=msg||'Error de conexión';
-}
-
-function setDriveDisconnected(){
-  document.getElementById('driveDot').className='drive-dot';
-  document.getElementById('driveStatusTxt').textContent='No conectado a Google Drive';
-  document.getElementById('driveUser').textContent='';
-  document.getElementById('driveLast').textContent='';
-  document.getElementById('btnDriveConnect').style.display='';
-  document.getElementById('btnDriveSync').style.display='none';
-  document.getElementById('btnDriveLoad').style.display='none';
-  document.getElementById('btnDriveDisconnect').style.display='none';
-}
-
-function setDriveLast(){
-  const now = new Date().toLocaleString('es-AR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-  document.getElementById('driveLast').textContent='Última sync: '+now;
-}
-
-async function driveFindOrCreate(){
-  if(!gAccessToken) return;
-  try{
-    // Buscar archivo existente en appDataFolder
-    const list = await gapi.client.drive.files.list({
-      spaces: 'appDataFolder',
-      q: "name='"+DRIVE_FILENAME+"'",
-      fields: 'files(id,name,modifiedTime)'
-    });
-    if(list.result.files && list.result.files.length>0){
-      gFileId = list.result.files[0].id;
-      sessionStorage.setItem('gFileId', gFileId);
-    } else {
-      // Crear archivo nuevo vacío
-      const meta = await gapi.client.drive.files.create({
-        resource:{ name: DRIVE_FILENAME, parents:['appDataFolder'] },
-        fields:'id'
-      });
-      gFileId = meta.result.id;
-      sessionStorage.setItem('gFileId', gFileId);
-    }
-  }catch(e){ setDriveError('Error buscando archivo en Drive'); console.error(e); }
-}
-
-async function driveSave(){
-  if(!gAccessToken){ toast('Conectate a Drive primero'); return; }
-  if(!gFileId) await driveFindOrCreate();
-  setDriveSyncing('Guardando en Drive...');
-  try{
-    const body = JSON.stringify(S, null, 2);
-    await fetch('https://www.googleapis.com/upload/drive/v3/files/'+gFileId+'?uploadType=media', {
-      method:'PATCH',
-      headers:{'Authorization':'Bearer '+gAccessToken,'Content-Type':'application/json'},
-      body: body
-    });
-    setDriveConnected();
-    setDriveLast();
-  }catch(e){ setDriveError('Error al guardar'); console.error(e); }
-}
-
-async function driveLoad(){
-  if(!gAccessToken){ toast('Conectate a Drive primero'); return; }
-  if(!gFileId) await driveFindOrCreate();
-  if(!gFileId){ toast('No se encontró el archivo en Drive'); return; }
-  setDriveSyncing('Cargando desde Drive...');
-  try{
-    const resp = await fetch('https://www.googleapis.com/drive/v3/files/'+gFileId+'?alt=media', {
-      headers:{'Authorization':'Bearer '+gAccessToken}
-    });
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    const text = await resp.text();
-    if(!text||text.trim()===''){ setDriveConnected(); return; } // archivo vacío
-    const p = JSON.parse(text);
-    if(!p.variables)throw new Error('Formato inválido');
-    S=p;
-    if(!S.rentabilidad)S.rentabilidad={};
-    if(!S.ejercicios)S.ejercicios=[];
-    save(); renderAll();
-    setDriveConnected();
-    setDriveLast();
-    toast('Datos cargados desde Drive ✓');
-  }catch(e){ setDriveError('Error al cargar'); console.error(e); }
-}
-
-// Auto-guardar en Drive cada vez que se modifica state
-const _origSave = save;
-function save(){
-  _origSave();
-  if(gAccessToken && gFileId){
-    clearTimeout(window._driveSaveTimer);
-    window._driveSaveTimer = setTimeout(driveSave, 2000); // guarda 2seg después del último cambio
-  }
-}
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1314,6 +1042,280 @@ function addAdjunto_rent(i,inp){_addAdjuntoToAct('rent',i,inp.files);inp.value='
 
 function elimAdj_gen(i,ai){const v=getV();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_gen_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'gen',i);}
 function elimAdj_rent(i,ai){const v=getRentVar();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_rent_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'rent',i);}
+
+
+
+function toggleDetail(id){
+  const body=document.getElementById(id);
+  const ico=document.getElementById('ico_'+id);
+  if(!body)return;
+  body.classList.toggle('open');
+  if(ico) ico.style.transform=body.classList.contains('open')?'rotate(90deg)':'';
+}
+
+function _getActV(pfx,i){
+  if(pfx==='rent'){const v=getRentVar();return v?v.actividades[i]:null;}
+  const v=getV();return v?v.actividades[i]:null;
+}
+function _reRenderChecks(pfx,i){
+  const a=_getActV(pfx,i);if(!a)return;
+  const checks=(a.checklist||[]).map((ck,ci)=>'<div class="checklist-item"><input type="checkbox"'+(ck.done?' checked':'')+' onchange="toggleCheck_'+pfx+'('+i+','+ci+',this.checked)"/><textarea class="checklist-item-text'+(ck.done?' done':'')+'" rows="1" onchange="editCheck_'+pfx+'('+i+','+ci+',this.value)">'+h(ck.texto)+'</textarea><button class="checklist-item-del" onclick="elimCheck_'+pfx+'('+i+','+ci+')"><i class="ti ti-x"></i></button></div>').join('');
+  const el=document.getElementById('checks_'+pfx+'_'+i);
+  if(el)el.innerHTML=checks||'<div style="font-size:11px;color:var(--text3);padding:3px 0">Sin ítems aún</div>';
+}
+function addCheck_gen(i){const inp=document.getElementById('newCheck_gen_'+i);if(!inp||!inp.value.trim())return;const v=getV();if(!v)return;if(!v.actividades[i].checklist)v.actividades[i].checklist=[];v.actividades[i].checklist.push({texto:inp.value.trim(),done:false});save();inp.value='';_reRenderChecks('gen',i);}
+function addCheck_rent(i){const inp=document.getElementById('newCheck_rent_'+i);if(!inp||!inp.value.trim())return;const v=getRentVar();if(!v)return;if(!v.actividades[i].checklist)v.actividades[i].checklist=[];v.actividades[i].checklist.push({texto:inp.value.trim(),done:false});save();inp.value='';_reRenderChecks('rent',i);}
+function toggleCheck_gen(i,ci,done){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].done=done;save();_reRenderChecks('gen',i);}
+function toggleCheck_rent(i,ci,done){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].done=done;save();_reRenderChecks('rent',i);}
+function editCheck_gen(i,ci,val){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].texto=val;save();}
+function editCheck_rent(i,ci,val){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist[ci].texto=val;save();}
+function elimCheck_gen(i,ci){const v=getV();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist.splice(ci,1);save();_reRenderChecks('gen',i);}
+function elimCheck_rent(i,ci){const v=getRentVar();if(!v||!v.actividades[i].checklist)return;v.actividades[i].checklist.splice(ci,1);save();_reRenderChecks('rent',i);}
+
+
+// ── ADJUNTOS ──
+function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
+
+function renderAdjuntos(adjs,pfx,i){
+  if(!adjs||!adjs.length)return '<div style="font-size:11px;color:var(--text3);padding:3px 0">Sin adjuntos</div>';
+  return adjs.map((adj,ai)=>{
+    const isImg=/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(adj.nombre);
+    const thumb=isImg?'<img class="adjunto-thumb" src="'+adj.data+'" onclick="openLightbox(\''+adj.data+'\')" alt="'+h(adj.nombre)+'"/>':'<div class="adjunto-icon"><i class="ti '+fileIcon(adj.nombre)+'"></i></div>';
+    return '<div class="adjunto-item">'+thumb+'<div class="adjunto-info"><div class="adjunto-name">'+h(adj.nombre)+'</div><div class="adjunto-size">'+adj.size+'</div></div><div class="adjunto-btns">'+(isImg?'<button class="adjunto-btn" onclick="openLightbox(\''+adj.data+'\')"><i class="ti ti-eye"></i></button>':'')+'<a class="adjunto-btn" href="'+adj.data+'" download="'+h(adj.nombre)+'"><i class="ti ti-download"></i></a><button class="adjunto-btn" style="color:#D85A30" onclick="elimAdj_'+pfx+'('+i+','+ai+')"><i class="ti ti-trash"></i></button></div></div>';
+  }).join('');
+}
+
+function fileIcon(n){
+  if(/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(n))return 'ti-photo';
+  if(/\.pdf$/i.test(n))return 'ti-file-type-pdf';
+  if(/\.(xlsx?|csv)$/i.test(n))return 'ti-file-spreadsheet';
+  if(/\.(docx?)$/i.test(n))return 'ti-file-word';
+  return 'ti-file';
+}
+
+function openLightbox(src){
+  document.getElementById('imgLightboxSrc').src=src;
+  document.getElementById('imgLightbox').classList.add('on');
+}
+
+function _addAdjuntoToAct(pfx,i,files){
+  const getAct=pfx==='rent'?()=>{const v=getRentVar();return v?v.actividades[i]:null;}:()=>{const v=getV();return v?v.actividades[i]:null;};
+  const a=getAct();if(!a)return;
+  if(!a.adjuntos)a.adjuntos=[];
+  let loaded=0;
+  Array.from(files).forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=function(ev){
+      a.adjuntos.push({nombre:file.name,size:fmtSize(file.size),data:ev.target.result});
+      loaded++;
+      if(loaded===files.length){
+        save();
+        const el=document.getElementById('adjs_'+pfx+'_'+i);
+        if(el)el.innerHTML=renderAdjuntos(a.adjuntos,pfx,i);
+        toast('Archivo adjuntado');
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function addAdjunto_gen(i,inp){_addAdjuntoToAct('gen',i,inp.files);inp.value='';}
+function addAdjunto_rent(i,inp){_addAdjuntoToAct('rent',i,inp.files);inp.value='';}
+
+function elimAdj_gen(i,ai){const v=getV();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_gen_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'gen',i);}
+function elimAdj_rent(i,ai){const v=getRentVar();if(!v||!v.actividades[i].adjuntos)return;v.actividades[i].adjuntos.splice(ai,1);save();const el=document.getElementById('adjs_rent_'+i);if(el)el.innerHTML=renderAdjuntos(v.actividades[i].adjuntos,'rent',i);}
+
+
+// ── GOOGLE DRIVE INTEGRATION ──
+const GCLIENT_ID = '995640298856-ih628f2ssme9n51a14ie23traadi12bj.apps.googleusercontent.com';
+const GSCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
+const DRIVE_FILENAME = 'tablero_agro_2030_datos.json';
+
+let gTokenClient = null;
+let gAccessToken = null;
+let gFileId = null;
+let gUserEmail = '';
+let driveReady = false;
+let gapiReady = false;
+
+// Inicializar cuando cargue la página
+window.addEventListener('load', function(){
+  // Cargar GAPI
+  function waitGapi(){
+    if(typeof gapi !== 'undefined'){
+      gapi.load('client', function(){
+        gapi.client.init({
+          discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
+        }).then(()=>{ gapiReady=true; initTokenClient(); });
+      });
+    } else { setTimeout(waitGapi, 200); }
+  }
+  waitGapi();
+
+  // Restaurar sesión si había token guardado
+  const savedToken = sessionStorage.getItem('gAccessToken');
+  const savedEmail = sessionStorage.getItem('gUserEmail');
+  const savedFileId = sessionStorage.getItem('gFileId');
+  if(savedToken){
+    gAccessToken=savedToken;
+    gUserEmail=savedEmail||'';
+    gFileId=savedFileId||null;
+    gapi.client.setToken({access_token:gAccessToken});
+    setDriveConnected();
+    toast('Drive reconectado automáticamente');
+  }
+});
+
+function initTokenClient(){
+  if(typeof google === 'undefined'){ setTimeout(initTokenClient,300); return; }
+  gTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GCLIENT_ID,
+    scope: GSCOPES,
+    callback: async (resp) => {
+      if(resp.error){ setDriveError('Error: '+resp.error); return; }
+      gAccessToken = resp.access_token;
+      gapi.client.setToken({access_token:gAccessToken});
+      sessionStorage.setItem('gAccessToken', gAccessToken);
+      // Obtener email del usuario
+      try{
+        const me = await gapi.client.request({path:'https://www.googleapis.com/oauth2/v2/userinfo'});
+        gUserEmail = me.result.email||'';
+        sessionStorage.setItem('gUserEmail', gUserEmail);
+      }catch(e){}
+      setDriveConnected();
+      await driveFindOrCreate();
+      await driveLoad();
+      toast('Conectado a Google Drive ✓');
+    }
+  });
+  driveReady = true;
+}
+
+function driveLogin(){
+  if(!driveReady){ toast('Iniciando conexión, intentá en un momento...'); setTimeout(driveLogin,1000); return; }
+  gTokenClient.requestAccessToken({prompt:''});
+}
+
+function driveLogout(){
+  if(gAccessToken) google.accounts.oauth2.revoke(gAccessToken);
+  gAccessToken=null; gFileId=null; gUserEmail='';
+  sessionStorage.removeItem('gAccessToken');
+  sessionStorage.removeItem('gUserEmail');
+  sessionStorage.removeItem('gFileId');
+  setDriveDisconnected();
+  toast('Desconectado de Drive');
+}
+
+function setDriveConnected(){
+  document.getElementById('driveDot').className='drive-dot connected';
+  document.getElementById('driveStatusTxt').textContent='Conectado a Google Drive';
+  document.getElementById('driveUser').textContent=gUserEmail;
+  document.getElementById('btnDriveConnect').style.display='none';
+  document.getElementById('btnDriveSync').style.display='';
+  document.getElementById('btnDriveLoad').style.display='';
+  document.getElementById('btnDriveDisconnect').style.display='';
+}
+
+function setDriveSyncing(msg){
+  document.getElementById('driveDot').className='drive-dot syncing';
+  document.getElementById('driveStatusTxt').textContent=msg||'Sincronizando...';
+}
+
+function setDriveError(msg){
+  document.getElementById('driveDot').className='drive-dot error';
+  document.getElementById('driveStatusTxt').textContent=msg||'Error de conexión';
+}
+
+function setDriveDisconnected(){
+  document.getElementById('driveDot').className='drive-dot';
+  document.getElementById('driveStatusTxt').textContent='No conectado a Google Drive';
+  document.getElementById('driveUser').textContent='';
+  document.getElementById('driveLast').textContent='';
+  document.getElementById('btnDriveConnect').style.display='';
+  document.getElementById('btnDriveSync').style.display='none';
+  document.getElementById('btnDriveLoad').style.display='none';
+  document.getElementById('btnDriveDisconnect').style.display='none';
+}
+
+function setDriveLast(){
+  const now = new Date().toLocaleString('es-AR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('driveLast').textContent='Última sync: '+now;
+}
+
+async function driveFindOrCreate(){
+  if(!gAccessToken) return;
+  try{
+    // Buscar archivo existente en appDataFolder
+    const list = await gapi.client.drive.files.list({
+      spaces: 'appDataFolder',
+      q: "name='"+DRIVE_FILENAME+"'",
+      fields: 'files(id,name,modifiedTime)'
+    });
+    if(list.result.files && list.result.files.length>0){
+      gFileId = list.result.files[0].id;
+      sessionStorage.setItem('gFileId', gFileId);
+    } else {
+      // Crear archivo nuevo vacío
+      const meta = await gapi.client.drive.files.create({
+        resource:{ name: DRIVE_FILENAME, parents:['appDataFolder'] },
+        fields:'id'
+      });
+      gFileId = meta.result.id;
+      sessionStorage.setItem('gFileId', gFileId);
+    }
+  }catch(e){ setDriveError('Error buscando archivo en Drive'); console.error(e); }
+}
+
+async function driveSave(){
+  if(!gAccessToken){ toast('Conectate a Drive primero'); return; }
+  if(!gFileId) await driveFindOrCreate();
+  setDriveSyncing('Guardando en Drive...');
+  try{
+    const body = JSON.stringify(S, null, 2);
+    await fetch('https://www.googleapis.com/upload/drive/v3/files/'+gFileId+'?uploadType=media', {
+      method:'PATCH',
+      headers:{'Authorization':'Bearer '+gAccessToken,'Content-Type':'application/json'},
+      body: body
+    });
+    setDriveConnected();
+    setDriveLast();
+  }catch(e){ setDriveError('Error al guardar'); console.error(e); }
+}
+
+async function driveLoad(){
+  if(!gAccessToken){ toast('Conectate a Drive primero'); return; }
+  if(!gFileId) await driveFindOrCreate();
+  if(!gFileId){ toast('No se encontró el archivo en Drive'); return; }
+  setDriveSyncing('Cargando desde Drive...');
+  try{
+    const resp = await fetch('https://www.googleapis.com/drive/v3/files/'+gFileId+'?alt=media', {
+      headers:{'Authorization':'Bearer '+gAccessToken}
+    });
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const text = await resp.text();
+    if(!text||text.trim()===''){ setDriveConnected(); return; } // archivo vacío
+    const p = JSON.parse(text);
+    if(!p.variables)throw new Error('Formato inválido');
+    S=p;
+    if(!S.rentabilidad)S.rentabilidad={};
+    if(!S.ejercicios)S.ejercicios=[];
+    save(); renderAll();
+    setDriveConnected();
+    setDriveLast();
+    toast('Datos cargados desde Drive ✓');
+  }catch(e){ setDriveError('Error al cargar'); console.error(e); }
+}
+
+// Auto-guardar en Drive cada vez que se modifica state
+const _origSave = save;
+function save(){
+  _origSave();
+  if(gAccessToken && gFileId){
+    clearTimeout(window._driveSaveTimer);
+    window._driveSaveTimer = setTimeout(driveSave, 2000); // guarda 2seg después del último cambio
+  }
+}
+
 
 </script>
 
