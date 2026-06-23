@@ -237,7 +237,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--text);font-size:1
       <div class="drive-user" id="driveUser"></div>
       <div class="drive-last" id="driveLast"></div>
       <div class="drive-actions">
-        <button class="btn btn-p btn-sm" id="btnDriveConnect" onclick="driveLogin()"><i class="ti ti-brand-google-drive"></i> Conectar Drive</button>
+        <button class="btn btn-p btn-sm" id="btnDriveConnect" onclick="driveLogin()" disabled style="opacity:.6"><i class="ti ti-brand-google-drive"></i> Conectar Drive</button>
         <button class="btn btn-sm" id="btnDriveSync" onclick="driveSave()" style="display:none"><i class="ti ti-cloud-upload"></i> Guardar en Drive</button>
         <button class="btn btn-sm" id="btnDriveLoad" onclick="driveLoad()" style="display:none"><i class="ti ti-cloud-download"></i> Cargar desde Drive</button>
         <button class="btn btn-sm" id="btnDriveDisconnect" onclick="driveLogout()" style="display:none"><i class="ti ti-logout"></i> Desconectar</button>
@@ -1167,7 +1167,10 @@ window.addEventListener('load', function(){
 });
 
 function initTokenClient(){
-  if(typeof google === 'undefined'){ setTimeout(initTokenClient,300); return; }
+  if(typeof google === 'undefined'){
+    setTimeout(initTokenClient,300);
+    return;
+  }
   gTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GCLIENT_ID,
     scope: GSCOPES,
@@ -1189,10 +1192,17 @@ function initTokenClient(){
     }
   });
   driveReady = true;
+  const btn = document.getElementById('btnDriveConnect');
+  if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+  document.getElementById('driveStatusTxt').textContent='No conectado a Google Drive';
 }
 
 function driveLogin(){
-  if(!driveReady){ toast('Iniciando conexión, intentá en un momento...'); setTimeout(driveLogin,1000); return; }
+  if(!driveReady || !gapiReady){
+    document.getElementById('driveStatusTxt').textContent='Iniciando conexión...';
+    setTimeout(driveLogin, 800);
+    return;
+  }
   gTokenClient.requestAccessToken({prompt:''});
 }
 
