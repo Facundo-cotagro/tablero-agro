@@ -1146,68 +1146,72 @@ function loadScript(src, cb) {
   document.head.appendChild(s);
 }
 
-function initDrive() {
-  // Cargar gsi/client primero
-  loadScript('https://accounts.google.com/gsi/client', function() {
-    // Luego cargar gapi
-    loadScript('https://apis.google.com/js/api.js', function() {
-      gapi.load('client', function() {
-        gapi.client.init({
-          discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
-        }).then(function() {
-          // Inicializar token client
-          gTokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: GCLIENT_ID,
-            scope: GSCOPES,
-            callback: async function(resp) {
-              if (resp.error) { setDriveError('Error: ' + resp.error); return; }
-              gAccessToken = resp.access_token;
-              gapi.client.setToken({access_token: gAccessToken});
-              sessionStorage.setItem('gAccessToken', gAccessToken);
-              try {
-                const me = await gapi.client.request({path: 'https://www.googleapis.com/oauth2/v2/userinfo'});
-                gUserEmail = me.result.email || '';
-                sessionStorage.setItem('gUserEmail', gUserEmail);
-              } catch(e) {}
-              setDriveConnected();
-              await driveFindOrCreate();
-              await driveLoad();
-              toast('Conectado a Google Drive ✓');
-            }
-          });
-          driveReady = true;
-          // Habilitar botón
-          const btn = document.getElementById('btnDriveConnect');
-          if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-          document.getElementById('driveStatusTxt').textContent = 'No conectado a Google Drive';
-          // Restaurar sesión guardada
-          const savedToken = sessionStorage.getItem('gAccessToken');
-          if (savedToken) {
-            gAccessToken = savedToken;
-            gUserEmail = sessionStorage.getItem('gUserEmail') || '';
-            gFileId = sessionStorage.getItem('gFileId') || null;
-            gapi.client.setToken({access_token: gAccessToken});
-            setDriveConnected();
-          }
-        }).catch(function(e) {
-          setDriveError('Error iniciando Drive');
-          console.error(e);
-        });
-      });
-    });
+function initDrive(autoConnect) {
+  // Con redirect flow no necesitamos las librerías de Google
+  // Solo habilitamos el botón y restauramos sesión si existe
+  driveReady = true;
+  const btn = document.getElementById('btnDriveConnect');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  document.getElementById('driveStatusTxt').textContent = 'No conectado a Google Drive';
+
+  // Restaurar sesión o procesar token de redirect
+  const savedToken = gAccessToken || sessionStorage.getItem('gAccessToken');
+  if (savedToken) {
+    gAccessToken = savedToken;
+    gUserEmail = sessionStorage.getItem('gUserEmail') || '';
+    gFileId = sessionStorage.getItem('gFileId') || null;
+    // Obtener email si no lo tenemos
+    if (!gUserEmail) {
+      fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {'Authorization': 'Bearer ' + gAccessToken}
+      }).then(r => r.json()).then(d => {
+        gUserEmail = d.email || '';
+        sessionStorage.setItem('gUserEmail', gUserEmail);
+        document.getElementById('driveUser').textContent = gUserEmail;
+      }).catch(()=>{});
+    }
+    setDriveConnected();
+    if (autoConnect) {
+      driveFindOrCreate().then(() => driveLoad());
+    }
+  }
+}
+
+// Leer token del redirect de Google si viene en la URL
+function checkRedirectToken() {
+  const hash = window.location.hash;
+  if (!hash) return false;
+  const params = {};
+  hash.slice(1).split('&').forEach(p => {
+    const [k,v] = p.split('=');
+    params[k] = decodeURIComponent(v||'');
   });
+  if (params.access_token) {
+    gAccessToken = params.access_token;
+    sessionStorage.setItem('gAccessToken', gAccessToken);
+    // Limpiar hash de la URL
+    history.replaceState(null, '', window.location.pathname);
+    return true;
+  }
+  return false;
 }
 
 // Iniciar cuando el DOM esté listo
-window.addEventListener('load', initDrive);
+window.addEventListener('load', function() {
+  const hadToken = checkRedirectToken();
+  initDrive(hadToken);
+});
 
 function driveLogin() {
-  if (!driveReady || !gTokenClient) {
-    document.getElementById('driveStatusTxt').textContent = 'Iniciando conexión...';
-    setTimeout(driveLogin, 500);
-    return;
-  }
-  gTokenClient.requestAccessToken({prompt: ''});
+  // Usar redirect flow - más confiable que popup
+  const params = new URLSearchParams({
+    client_id: GCLIENT_ID,
+    redirect_uri: window.location.href.split('#')[0],
+    response_type: 'token',
+    scope: GSCOPES,
+    prompt: 'select_account'
+  });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 
 function driveLogout() {
@@ -1259,19 +1263,22 @@ function setDriveLast() {
 async function driveFindOrCreate() {
   if (!gAccessToken) return;
   try {
-    const list = await gapi.client.drive.files.list({
-      spaces: 'appDataFolder',
-      q: "name='" + DRIVE_FILENAME + "'",
-      fields: 'files(id,name)'
-    });
-    if (list.result.files && list.result.files.length > 0) {
-      gFileId = list.result.files[0].id;
+    const r = await fetch(
+      "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D'" + DRIVE_FILENAME + "'&fields=files(id,name)",
+      {headers: {'Authorization': 'Bearer ' + gAccessToken}}
+    );
+    const data = await r.json();
+    if (data.files && data.files.length > 0) {
+      gFileId = data.files[0].id;
     } else {
-      const meta = await gapi.client.drive.files.create({
-        resource: {name: DRIVE_FILENAME, parents: ['appDataFolder']},
-        fields: 'id'
+      // Crear archivo nuevo
+      const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + gAccessToken, 'Content-Type': 'application/json'},
+        body: JSON.stringify({name: DRIVE_FILENAME, parents: ['appDataFolder']})
       });
-      gFileId = meta.result.id;
+      const mdata = await meta.json();
+      gFileId = mdata.id;
     }
     sessionStorage.setItem('gFileId', gFileId);
   } catch(e) {
@@ -1325,10 +1332,13 @@ async function driveLoad() {
   }
 }
 
-// Auto-guardar en Drive cada vez que se modifica state
-const _origSave = save;
+// Auto-guardar en Drive: hook sobre localStorage
+const _baseSave = function() {
+  try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
+};
+// Sobreescribir save para incluir Drive sync
 function save() {
-  _origSave();
+  _baseSave();
   if (gAccessToken && gFileId) {
     clearTimeout(window._driveSaveTimer);
     window._driveSaveTimer = setTimeout(driveSave, 2000);
